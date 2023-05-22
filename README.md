@@ -24,9 +24,9 @@ Our obtained $BW-UVP$ results could be achieved by launching the script `./scrip
 cd ./scripts
 python3 egeot_gauss2gauss_train.py '<exp_name_you_want>' --eps 0.1 --dim 64 --use_wandb --device 'cuda:<number>'
 ```
-Note that we use `wandb` ([link](https://wandb.ai/site)) dashboard system when launching our experiments. You are expected to use `wandb` too. 
+Note that we use `wandb` ([link](https://wandb.ai/site)) dashboard system when launching our experiments. The practitioners are expected to use `wandb` too. 
 
-### ColoredMnist 2$\rightarrow$3
+### ColoredMnist 2 to 3
 
 The code is located in `./mnist2to3` directory. The following two scripts are used for training and evaluating (generating images) correspondingly:
 ```
@@ -37,11 +37,11 @@ The configs for the experiments are located in `./mnist2to3/config_locker` folde
 
 * number of Langevin steps when training $s = 500, 1000, 2000$
 
-* noise level $n$ used to slightly noise the reference data for stability
+* different noise levels $n$ used to slightly noise the reference data for stability
 
 #### Training
 
-In order to run the experiment with, e.g., $h = 0.01, s = 1000, n = 0.1$, use the following commands:
+In order to run the experiment for, e.g., $h = 0.01, s = 1000, n = 0.1$, use the following commands:
 ```bash
 cd ./mnist2to3
 python3 train_ot_data.py 'mc2to3_h0.01_s1000_n0.1' --device 'cuda:<number>' --use_wandb
@@ -51,7 +51,7 @@ The images and checkpoints will be saved in the corresponding subdirectories of 
 
 #### Evaluation
 
-Given pretrained model for particular set of parameters $h, s, n$, e.g., $h = 0.01, s = 1000, n = 0.1$, one can evaluate these models by running:
+Given pretrained models for particular set of parameters $h, s, n$, e.g., $h = 0.01, s = 1000, n = 0.1$, one can evaluate these models by running:
 ```bash
 cd ./mnist2to3
 python3 eval_ot.py 'mc2to3_h0.01_s1000_n0.1' --device 'cuda:<number>' --use_wandb
