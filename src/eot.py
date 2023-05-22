@@ -15,7 +15,7 @@ import os
 ##############
 # SampleBuffer
 
-class SampleBufferEOT:
+class SampleBufferEgEOT:
 
     def __init__(self, noise_gen, max_samples=10000):
         self.max_samples = max_samples
@@ -203,11 +203,11 @@ def sample_pseudo_langevin_batch(
     return x
 
 ##############
-## EOT implementations
+## EgEOT implementations
 
-class EOT_Generic_Mixin(nn.Module):
+class EgEOT_Generic_Mixin(nn.Module):
     '''
-    EOT with general cost function generic class
+    EgEOT with general cost function generic class
     '''
 
     @property
@@ -361,18 +361,18 @@ class EOT_Generic_Mixin(nn.Module):
         raise NotImplementedError()
 
 
-class EOT_l2sq_Mixin(EOT_Generic_Mixin):
+class EgEOT_l2sq_Mixin(EgEOT_Generic_Mixin):
     '''
-    EOT for squared l2 loss $0.5 \\Vert x - y \\Vert_2^2$
+    EgEOT for squared l2 loss $0.5 \\Vert x - y \\Vert_2^2$
     '''
 
     def cost_grad_y(self, y, x):
         return y - x
 
 
-class EOT_no_cost_Mixin(EOT_Generic_Mixin):
+class EgEOT_no_cost_Mixin(EgEOT_Generic_Mixin):
     '''
-    EOT for zero cost (i.e. recovers simple energy based model)
+    EgEOT for zero cost (i.e. recovers simple energy based model)
     '''
 
     def cost_grad_y(self, y, x):

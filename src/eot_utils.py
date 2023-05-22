@@ -11,7 +11,7 @@ from src.utils import computePotGrad
 from dgm_utils.scheduler import TrainingSchedulerWandB_Mixin
 from dgm_utils.scheduler import TrainingSchedulerFID_IS_Mixin
 
-def conditional_sample_from_EOT_IGEBM(
+def conditional_sample_from_EgEOT(
     model, 
     config, 
     X, 
@@ -63,7 +63,7 @@ def conditional_sample_from_EOT_IGEBM(
 
     return back_pix_val_transform(Y)
 
-class TrainingSchedulerWandB_IGEBM_Mixin(TrainingSchedulerWandB_Mixin):
+class TrainingSchedulerWandB_EgEOT_Mixin(TrainingSchedulerWandB_Mixin):
 
     def __init__(
         self, *args, 
@@ -110,7 +110,7 @@ class TrainingSchedulerWandB_IGEBM_Mixin(TrainingSchedulerWandB_Mixin):
                             continue
 
                         X = self.init_X_fixed_samples
-                        Y = conditional_sample_from_EOT_IGEBM(
+                        Y = conditional_sample_from_EgEOT(
                             self.model, 
                             self.config,
                             X, self.draw_y_samples_per_x, 
@@ -135,7 +135,7 @@ class TrainingSchedulerWandB_IGEBM_Mixin(TrainingSchedulerWandB_Mixin):
                             continue
 
                         # X = self.init_X_sampler.sample(self.draw_x_samples)
-                        Y = conditional_sample_from_EOT_IGEBM(
+                        Y = conditional_sample_from_EgEOT(
                             self.model, 
                             self.config,
                             X, self.draw_y_samples_per_x, 
@@ -160,10 +160,10 @@ class TrainingSchedulerWandB_IGEBM_Mixin(TrainingSchedulerWandB_Mixin):
         super().on_epoch_eval_end(epoch, losses)
 
 
-class TrainingScheduler_IGEBM_FID_IS_Mixin(TrainingSchedulerFID_IS_Mixin):
+class TrainingScheduler_EgEOT_FID_IS_Mixin(TrainingSchedulerFID_IS_Mixin):
 
     def sample_from_model(self, n_samples):
-        return conditional_sample_from_EOT_IGEBM(
+        return conditional_sample_from_EgEOT(
             self.model, 
             self.config,
             self.estimate_fid_is_X_samples,
