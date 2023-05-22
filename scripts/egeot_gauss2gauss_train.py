@@ -90,10 +90,10 @@ CONFIG.USE_WANDB = True
 
 # training parameters
 parser.add_argument('--batch_size', type=int, help='batch size', default=1024)
-parser.add_argument('--epochs', type=int, help='number of epochs', default=100)
+parser.add_argument('--epochs', type=int, help='number of epochs', default=200)
 
 CONFIG.BATCH_SIZE = 1024
-CONFIG.EPOCHS = 100
+CONFIG.EPOCHS = 200
 
 # link to .yaml config
 # the properties given in the config are of the top priority
