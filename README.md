@@ -4,7 +4,7 @@ Energy-guided Entropic Optimal Transport implementation
 
 ## Experiments 
 
-Below we give the instructions how to launch the experiments from our manuscript
+Below, we give the instructions how to launch the experiments from our manuscript
 
 ### Toy 2D experiment (2D Gaussian to Swissroll)
 
@@ -51,14 +51,14 @@ The images and checkpoints will be saved in the corresponding subdirectories of 
 
 #### Evaluation
 
-Given pretrained models for particular set of parameters $h, s, n$, e.g., $h = 0.01, s = 1000, n = 0.1$, one can evaluate these models by running:
+Given pretrained models for a particular set of parameters $h, s, n$, e.g., $h = 0.01, s = 1000, n = 0.1$, one can evaluate these models by running:
 ```bash
 cd ./mnist2to3
 python3 eval_ot.py 'mc2to3_h0.01_s1000_n0.1' --device 'cuda:<number>' --use_wandb
 ```
 
 The results could be found in `./mnist2to3/out_eval/mc2to3_h0.01_s1000_n0.1`. 
-Note, that `eval_ot.py` evaluates checkpoint with the largest number from `./mnist2to3/out_data/mc2to3_h0.01_s1000_n0.1`.
+Note, that `eval_ot.py` evaluates the checkpoint with the largest number from `./mnist2to3/out_data/mc2to3_h0.01_s1000_n0.1`.
 
 
 
