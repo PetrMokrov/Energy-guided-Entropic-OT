@@ -1,6 +1,21 @@
 # Energy-guided-EntropicOT
 
-Energy-guided Entropic Optimal Transport implementation
+This repository contains code to reproduce the experiments from our work [https://arxiv.org/abs/2304.06094](https://arxiv.org/abs/2304.06094)
+
+## Citation
+
+If you find this repository or the ideas presented in our paper useful, please consider citing our paper.
+
+```
+@misc{mokrov2023energyguided,
+      title={Energy-guided Entropic Neural Optimal Transport}, 
+      author={Petr Mokrov and Alexander Korotin and Evgeny Burnaev},
+      year={2023},
+      eprint={2304.06094},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG}
+}
+```
 
 ## Experiments 
 
