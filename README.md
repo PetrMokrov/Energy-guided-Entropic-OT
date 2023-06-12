@@ -1,4 +1,4 @@
-# EgEOT
+# Energy-guided-EntropicOT
 
 Energy-guided Entropic Optimal Transport implementation
 
