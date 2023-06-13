@@ -9,7 +9,7 @@ If you find this repository or the ideas presented in our paper useful, please c
 ```
 @misc{mokrov2023energyguided,
       title={Energy-guided Entropic Neural Optimal Transport}, 
-      author={Petr Mokrov and Alexander Korotin and Evgeny Burnaev},
+      author={Petr Mokrov and Alexander Korotin and Alexander Kolesov and Nikita Gushchin and Evgeny Burnaev},
       year={2023},
       eprint={2304.06094},
       archivePrefix={arXiv},
