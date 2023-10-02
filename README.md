@@ -2,6 +2,8 @@
 
 This repository contains code to reproduce the experiments from our work [https://arxiv.org/abs/2304.06094](https://arxiv.org/abs/2304.06094)
 
+<p align="center"><img src="teaser/teaser_egeot.png" width="600" /></p>
+
 ## Citation
 
 If you find this repository or the ideas presented in our paper useful, please consider citing our paper.
