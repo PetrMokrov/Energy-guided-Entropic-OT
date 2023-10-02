@@ -4,9 +4,11 @@ import torch.autograd as autograd
 
 import numpy as np
 from collections import defaultdict
+from typing import Callable, Union, Tuple
 import random
 
 from .eot_utils import computePotGrad, evaluating
+from .utils import Config, clean_resources
 
 from torchvision import utils as TVutils
 import sys
@@ -15,71 +17,124 @@ import os
 ##############
 # SampleBuffer
 
-class SampleBufferEgEOT:
-
-    def __init__(self, noise_gen, max_samples=10000):
-        self.max_samples = max_samples
+class SampleBufferGeneric:
+    
+    def __init__(self, noise_gen):
         self.noise_gen = noise_gen
+    
+    def __len__(self):
+        raise NotImplementedError()
+    
+    def push(self, Xs, samples, ids):
+        raise NotImplementedError()
+    
+    def get(self, n_samples):
+        raise NotImplementedError()
+    
+    def __call__(self, Xs):
+        raise NotImplementedError()
+
+class SampleBufferEgEOT(SampleBufferGeneric):
+
+    def __init__(self, noise_gen, p=0.95, max_samples=10000, device='cpu'):
+        self.max_samples = max_samples
         self.buffer = []
+        self.device = device
+        self.p = p
+        super().__init__(noise_gen)
 
     def __len__(self):
         return len(self.buffer)
 
-    def push(self, samples, Xs):
-        samples = samples.detach().to('cpu')
-        Xs = Xs.detach().to('cpu')
+    def push(self, Xs, samples, ids):
+        samples = samples.detach().cpu()
+        Xs = Xs.detach().cpu()
+        
+        if ids is None:
+            for sample, X in zip(samples, Xs):
+                self.buffer.append((sample, X))
 
-        for sample, X in zip(samples, Xs):
-            self.buffer.append((sample, X))
+                if len(self.buffer) > self.max_samples:
+                    self.buffer.pop(0)
+        else:
+            assert len(ids) == len(samples)
+            assert max(ids) < len(self.buffer)
+            samp_Xs = [(sample, X) for sample, X in zip(samples, Xs)]
+            for i, _id in enumerate(ids):
+                self.buffer[_id] = samp_Xs[i]
+            
 
-            if len(self.buffer) > self.max_samples:
-                self.buffer.pop(0)
-
-    def get(self, n_samples, device='cuda'):
-        items = random.choices(self.buffer, k=n_samples)
+    def get(self, n_samples):
+        indices = random.choices(range(len(self.buffer)), k=n_samples)
+        items = [self.buffer[i] for i in indices]
         samples, Xs = zip(*items)
-        samples = torch.stack(samples, 0).to(device)
-        Xs = torch.stack(Xs, 0).to(device)
-        return Xs, samples
+        samples = torch.stack(samples, 0).to(self.device)
+        Xs = torch.stack(Xs, 0).to(self.device)
+        return Xs, samples, indices
 
     def get_random(self, Xs):
         samples = self.noise_gen.sample((Xs.size(0),)).to(Xs)
-        return Xs, samples
+        return Xs, samples, None
+    
+    def __call__(self, Xs):
+        batch_size = Xs.size(0)
+        if len(self) < 1:
+            return self.get_random(Xs)
+
+        n_replay = (np.random.rand(batch_size) < self.p).sum()
+
+        if n_replay == 0:
+            Xs, samples, _ = self.get_random(Xs)
+        elif n_replay == batch_size:
+            Xs, samples, _ = self.get(n_replay, device=Xs.device)
+        else:
+            replay_Xs, replay_samples, _ = self.get(n_replay)
+            random_Xs, random_samples, _ = self.get_random(Xs[n_replay:])
+            Xs, samples = torch.cat([replay_Xs, random_Xs], 0), torch.cat([replay_samples, random_samples], 0)
+
+        return Xs, samples, None
 
 
-def do_sample_buffer(buffer, Xs, p=0.95):
-
-    batch_size = Xs.size(0)
-    if len(buffer) < 1:
-        return buffer.get_random(Xs)
-
-    n_replay = (np.random.rand(batch_size) < p).sum()
-
-    if n_replay == 0:
-        Xs, samples = buffer.get_random(Xs)
-    elif n_replay == batch_size:
-        Xs, samples = buffer.get(n_replay, device=Xs.device)
-    else:
-        replay_Xs, replay_samples = buffer.get(n_replay, device=Xs.device)
-        random_Xs, random_samples = buffer.get_random(Xs[n_replay:])
-        Xs, samples = torch.cat([replay_Xs, random_Xs], 0), torch.cat([replay_samples, random_samples], 0)
-
-    return (Xs, samples)
+class SampleBufferStatic(SampleBufferGeneric):
+    
+    def __init__(self, noise_gen, Xs, device='cpu'):
+        self.Xs = Xs
+        self.noise_gen = noise_gen
+        self.Ys = self.noise_gen((Xs.size(0),)).cpu()
+        self.device = device
+    
+    def __len__(self):
+        return len(self.Xs)
+    
+    def push(self, Xs, samples, ids):
+        self.Xs[ids] = Xs.detach().cpu()
+        self.Ys[ids] = samples.detach().cpu()
+        del Xs
+        del samples
+    
+    def get(self, n_samples):
+        indices = np.random.choice(len(self), n_samples)
+        return self.Xs[indices].to(self.device), self.Ys[indices].to(self.device), indices
+    
+    def __call__(self, Xs):
+        return self.get(len(Xs))
 
 #############################
 # Energy sampling techniques
 
 def sample_langevin_batch(
-    score_function,
-    x, 
-    eps=1e-3, # step size
-    n_steps=100, 
-    decay=1.,
-    thresh=None,
-    noise=0.005, # standard deviation of additional noise
+    score_function: Callable,
+    x: torch.Tensor, 
+    eps=1e-3, # step size (aka ENERGY_SAMPLING_STEP)
+    n_steps=100, #        (aka ENERGY_SAMPLING_ITERATIONS)
+    decay=1., #           (aka LANGEVIN_DECAY)
+    thresh=None, #        (aka LANGEVIN_THRESH)
+    noise=0.005, #        (aka LANGEVIN_SAMPLING_NOISE)
     data_projector=lambda x: x.clamp_(0., 1.),
     compute_stats=False
-):
+) -> Union[
+    Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], 
+    torch.Tensor, torch.Tensor]:
     '''
     Overall, langevin step looks as:
     X_{t + 1} = X_{t} + 0.5 * eps * score(X_{t}) + noise * N(0, 1)
@@ -100,6 +155,7 @@ def sample_langevin_batch(
     # statistics
     r_t = torch.zeros(1).to(x.device)
     cost_r_t = torch.zeros(1).to(x.device)
+    score_r_t = torch.zeros(1).to(x.device)
     noise_t = torch.zeros(1).to(x.device)
     
     # langevin iterations
@@ -107,7 +163,7 @@ def sample_langevin_batch(
     for s in range(n_steps):
 
         z_t = torch.randn_like(x)
-        sc, cost_part = score_function(x, ret_cost_part=True)
+        sc, cost_part, score_part = score_function(x, ret_stats=True)
 
         ## adjusting discretization step
         if thresh is None:
@@ -128,6 +184,7 @@ def sample_langevin_batch(
         if compute_stats:
             r_t += (0.5 * eps_adj.view(-1) * sc.data.view(sc.size(0), -1).norm(dim=1)).mean()
             cost_r_t += (0.5 * eps_adj.view(-1) * cost_part.data.view(sc.size(0), -1).norm(dim=1)).mean()
+            score_r_t += (0.5 * eps_adj.view(-1) * score_part.data.view(sc.size(0), -1).norm(dim=1)).mean()
             noise_t += (noise.view(-1) * z_t.data.view(z_t.size(0), -1).norm(dim=1)).mean()
 
         eps *= decay
@@ -138,7 +195,7 @@ def sample_langevin_batch(
 
     if not compute_stats:
         return x
-    return x, r_t/float(n_steps), cost_r_t/float(n_steps), noise_t / float(n_steps)
+    return x, r_t/float(n_steps), cost_r_t/float(n_steps), score_r_t/float(n_steps), noise_t / float(n_steps)
 
 def clip_by_norm(x, norm_thresh):
     assert len(x.shape) > 1
@@ -147,8 +204,8 @@ def clip_by_norm(x, norm_thresh):
 
 
 def sample_pseudo_langevin_batch(
-    score_function, 
-    x,
+    score_function : Callable, 
+    x : torch.Tensor,
     eps=10.,
     n_steps=60,
     decay=1.0,
@@ -158,7 +215,9 @@ def sample_pseudo_langevin_batch(
     noise=0.005, 
     data_projector=lambda x: x.clamp_(0., 1.),
     compute_stats=False
-):
+) -> Union[
+    Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], 
+    torch.Tensor]:
 
     if isinstance(eps, torch.Tensor):
         assert eps.size(0) == x.size(0)
@@ -172,10 +231,11 @@ def sample_pseudo_langevin_batch(
     
     r_t = torch.zeros(1).to(x.device)
     cost_r_t = torch.zeros(1).to(x.device)
+    score_r_t = torch.zeros(1).to(x.device)
 
     for s in range(n_steps):
         x.data.add_(noise)
-        sc, cost_part = score_function(x, ret_cost_part=True)
+        sc, cost_part, score_part = score_function(x, ret_stats=True)
 
         if grad_proj_type == 'none':
             pass
@@ -194,12 +254,13 @@ def sample_pseudo_langevin_batch(
         if compute_stats:
             r_t += 0.5 * eps[0].item() * sc.data.view(sc.size(0), -1).norm(dim=1).mean()
             cost_r_t += 0.5 * eps[0].item() * cost_part.data.view(sc.size(0), -1).norm(dim=1).mean()
+            score_r_t += 0.5 * eps[0].item() * score_part.data.view(sc.size(0), -1).norm(dim=1).mean()
 
         ## Project data to images compact
         x = data_projector(x)
 
     if compute_stats:
-        return x, r_t/float(n_steps), cost_r_t/float(n_steps), noise.view(x.size(0), -1).norm(dim=1).mean()
+        return x, r_t/float(n_steps), cost_r_t/float(n_steps), score_r_t/float(n_steps), noise.view(x.size(0), -1).norm(dim=1).mean()
     return x
 
 ##############
@@ -223,7 +284,7 @@ class EgEOT_Generic_Mixin(nn.Module):
         '''
         raise NotImplementedError()
 
-    def cond_score(self, y, x, ret_cost_part=False):
+    def cond_score(self, y, x, ret_stats=False):
         with torch.enable_grad():
             y.requires_grad_(True)
             proto_s = self.forward(y)
@@ -232,17 +293,19 @@ class EgEOT_Generic_Mixin(nn.Module):
         cost_coeff = (1./ self.config.HREG) * (self.config.LANGEVIN_COST_COEFFICIENT / self.config.ENERGY_SAMPLING_STEP)
         cost_part = self.cost_grad_y(y, x) * cost_coeff
         score_part = s * self.config.LANGEVIN_SCORE_COEFFICIENT
-        if not ret_cost_part:
+        if not ret_stats:
             return score_part - cost_part
-        return score_part - cost_part, cost_part
+        return score_part - cost_part, cost_part, score_part
 
     def get_samples_energy(
-        self, init_y_samples, x_samples, 
+        self, init_y_samples: torch.Tensor, x_samples: torch.Tensor, 
         eps=5e-2, n_steps=10, decay=1.0, compute_stats=False
-    ):
+    ) -> Union[
+    Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], 
+    torch.Tensor, torch.Tensor]:
 
-        def score(y, ret_cost_part=False):
-            return self.cond_score(y, x_samples, ret_cost_part=ret_cost_part)
+        def score(y, ret_stats=False):
+            return self.cond_score(y, x_samples, ret_stats=ret_stats)
 
         if not self.config.ENERGY_SAMPLING_NO_PROJECT_DATA:
             data_projector = lambda x: x.clamp_(self.config.PIX_VAL_MIN, self.config.PIX_VAL_MAX)
@@ -276,8 +339,8 @@ class EgEOT_Generic_Mixin(nn.Module):
 
     def __init__(
         self,
-        sample_buffer,
-        config,
+        sample_buffer : SampleBufferGeneric,
+        config : Config,
         *args, 
         **kwargs
     ):
@@ -296,38 +359,39 @@ class EgEOT_Generic_Mixin(nn.Module):
         # slightly noise the data
         if self.config.REFERENCE_DATA_NOISE_SIGMA > 0.0:
             pos_y_samples += self.config.REFERENCE_DATA_NOISE_SIGMA * torch.randn_like(pos_y_samples)
-
-        x_samples, neg_y_samples_0 = do_sample_buffer(
-            self.sample_buffer, x_samples, p=self.config.P_SAMPLE_BUFFER_REPLAY)
+        
+        x_samples, neg_y_samples_0, indices = self.sample_buffer(x_samples)
 
         with evaluating(self):
             with torch.no_grad():
-                neg_y_samples, r_t, cost_r_t, noise_norm = self.get_samples_energy(
+                neg_y_samples, r_t, cost_r_t, score_r_t, noise_norm = self.get_samples_energy(
                     neg_y_samples_0, x_samples, 
                     self.config.ENERGY_SAMPLING_STEP, 
                     self.config.ENERGY_SAMPLING_ITERATIONS,
                     decay=self.config.LANGEVIN_DECAY, compute_stats=True)
-
-        self.sample_buffer.push(neg_y_samples, x_samples)
+        
+        self.sample_buffer.push(x_samples, neg_y_samples, indices)
         pos_out = self.forward(pos_y_samples)
         pos_out_mean = pos_out.mean()
         neg_out = self.forward(neg_y_samples)
         neg_out_mean = neg_out.mean()
         loss = - pos_out_mean + neg_out_mean
         loss += self.config.ALPHA * (pos_out.pow(2) + neg_out.pow(2)).mean()
+        self.sample_buffer.push(x_samples, neg_y_samples, indices)
         return {
             'pos_out': pos_out_mean,
             'neg_out': neg_out_mean,
             'loss': loss,
             'r_t': r_t,
             'cost_r_t': cost_r_t,
+            'score_r_t': score_r_t,
             'noise': noise_norm
         }
 
     def sample(
-        self, x_samples, n_iterations=None, step_size=None, decay=None,
+        self, x_samples: torch.Tensor, n_iterations=None, step_size=None, decay=None,
         y_init=None, init_sigma=1., init_sampler=None
-    ):
+    ) -> torch.Tensor:
         n_iterations = self.config.ENERGY_SAMPLING_ITERATIONS if n_iterations is None else n_iterations
         step_size = self.config.ENERGY_SAMPLING_STEP if step_size is None else step_size
         decay = self.config.LANGEVIN_DECAY if decay is None else decay
@@ -345,6 +409,7 @@ class EgEOT_Generic_Mixin(nn.Module):
                 z = self.get_samples_energy(
                     z, x_samples, eps=step_size, 
                     n_steps=n_iterations, decay=decay)
+                assert isinstance(z, torch.Tensor)
                 return z
 
     def store(self, path):
@@ -378,3 +443,24 @@ class EgEOT_no_cost_Mixin(EgEOT_Generic_Mixin):
     def cost_grad_y(self, y, x):
         return 0.
 
+class EgEOT_l2sq_ambient_Mixin(EgEOT_Generic_Mixin):
+    '''
+    '''
+    def __init__(
+        self,
+        latent2data_gen,
+        sample_buffer,
+        config,
+        *args, 
+        **kwargs
+    ):
+        self.latent2data_gen = latent2data_gen
+        super().__init__(sample_buffer, config, *args, **kwargs)
+
+    def cost_grad_y(self, y, x):
+        with torch.enable_grad():
+            y.requires_grad_(True)
+            cost = 0.5 * torch.flatten(self.latent2data_gen(y) - x, start_dim=1).pow(2).sum(dim=1, keepdim=True)
+            assert cost.shape == torch.Size([y.size(0), 1])
+            res = computePotGrad(y, cost)
+        return res

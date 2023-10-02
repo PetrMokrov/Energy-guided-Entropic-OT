@@ -41,13 +41,13 @@ from dgm_utils.scheduler import (
 from src.utils import make_numpy
 from src.utils import Distrib2Sampler, JointSampler
 from src.utils import DataLoaderWrapper
-from src.models2D import FullyConnectedMLP, FullyConnectedMLPwithConfig
+from src.models import FullyConnectedMLP, FullyConnectedMLPwithConfig
 from src.utils import Config
 from src.utils import ParametersSpecificator
 
 # EOT
 from src.eot import EgEOT_l2sq_Mixin
-from src.eot import SampleBufferEgEOT, do_sample_buffer
+from src.eot import SampleBufferEgEOT
 from src.eot_utils import conditional_sample_from_EgEOT
 
 #random seed
@@ -295,11 +295,15 @@ basic_noise_gen = TD.Normal(
     torch.ones(CONFIG.DIM).to(DEVICE) * CONFIG.BASIC_NOISE_VAR)
 
 sample_buffer = SampleBufferEgEOT(
-    basic_noise_gen, max_samples=CONFIG.SAMPLE_BUFFER_SIZE)
+    basic_noise_gen,
+    p=CONFIG.P_SAMPLE_BUFFER_REPLAY,
+    max_samples=CONFIG.SAMPLE_BUFFER_SIZE,
+    device=DEVICE)
 
 reset_seed(seed=0xCAFFEE)
 
-model = EgEOT_l2sq(sample_buffer, CONFIG).to(DEVICE)
+model = EgEOT_l2sq(sample_buffer, CONFIG)
+model.potential = model.potential.to(DEVICE)
 
 train_loader = DataLoaderWrapper(
     JointSampler(X_sampler, Y_sampler),

@@ -1,10 +1,12 @@
 from collections import defaultdict
 from tqdm import tqdm
+from typing import List, Union
 
 import torch
 from torch import optim
 import wandb
 import os
+import gc
 
 from .scheduler import (
     TrainingSchedulerGeneric,
@@ -12,6 +14,11 @@ from .scheduler import (
     TrainingSchedulerWandB_Mixin,
     TrainingSchedulerModelsSaver_Mixin
 )
+
+def clean_resources(*tsrs):
+    del tsrs
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
 def train_epoch(
@@ -22,7 +29,7 @@ def train_epoch(
     use_cuda,
     loss_key='total', 
     conditional=False,
-    scheduler=TrainingSchedulerGeneric()
+    schedulers: List[TrainingSchedulerGeneric] = [TrainingSchedulerGeneric(),]
 ):
     model.train()
 
@@ -36,11 +43,16 @@ def train_epoch(
         losses = model.loss(x)
         optimizer.zero_grad()
         losses[loss_key].backward()
-        scheduler.on_batch_optim_step(epoch=n_epoch, batch=n_batch)
+        # losses = {key: val.detach() for key, val in losses.items()}
+        # clean_resources()
+        for scheduler in schedulers:
+            scheduler.on_batch_optim_step(epoch=n_epoch, batch=n_batch)
         optimizer.step()
-        scheduler.on_batch_train_end(epoch=n_epoch, batch=n_batch, losses=losses, data=x)
-
-    scheduler.on_epoch_train_end(epoch=n_epoch)
+        for scheduler in schedulers:
+            scheduler.on_batch_train_end(epoch=n_epoch, batch=n_batch, losses=losses, data=x)
+    
+    for scheduler in schedulers:
+        scheduler.on_epoch_train_end(epoch=n_epoch)
 
 
 def eval_model(
@@ -49,7 +61,7 @@ def eval_model(
     data_loader, 
     use_cuda,
     conditional=False, 
-    scheduler=TrainingSchedulerGeneric()
+    schedulers: List[TrainingSchedulerGeneric] =[TrainingSchedulerGeneric(),]
 ):
     model.eval()
     stats = defaultdict(float)
@@ -70,8 +82,9 @@ def eval_model(
 
         for k in stats.keys():
             stats[k] /= ds_length
-
-        scheduler.on_epoch_eval_end(epoch=n_epoch, losses=stats)
+        
+        for scheduler in schedulers:
+            scheduler.on_epoch_eval_end(epoch=n_epoch, losses=stats)
 
 
 def train_model(
@@ -86,12 +99,14 @@ def train_model(
     use_cuda=False,
     loss_key='total_loss',
     conditional=False,
-    scheduler=TrainingSchedulerGeneric()
+    scheduler: Union[TrainingSchedulerGeneric, List[TrainingSchedulerGeneric]] = TrainingSchedulerGeneric()
 ):
+    schedulers = [scheduler,] if isinstance(scheduler, TrainingSchedulerGeneric) else scheduler
     if optimizer is None:
         assert lr is not None
         optimizer = optim.Adam(model.parameters(), lr=lr, betas=adam_betas)
-        scheduler.optimizer = optimizer
+        for sched in schedulers: 
+            sched.optimizer = optimizer
 
     forrange = tqdm(range(epochs)) if use_tqdm else range(epochs)
     if use_cuda:
@@ -101,8 +116,8 @@ def train_model(
         model.train()
         train_epoch(
             epoch, model, train_loader, optimizer, 
-            use_cuda, loss_key, conditional, scheduler)
+            use_cuda, loss_key, conditional, schedulers)
         eval_model(
             epoch, model, test_loader, 
-            use_cuda, conditional, scheduler)
+            use_cuda, conditional, schedulers)
 

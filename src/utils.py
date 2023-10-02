@@ -9,6 +9,7 @@ import torch.utils.data as Tdata
 import gc
 import os
 import pickle
+from typing import Dict, Any
 
 from tqdm import tqdm
 from IPython.display import clear_output
@@ -305,21 +306,46 @@ def energy_based_distance(X, Y, n_projections=10000, biased=False, log_scale=Fal
 ## Config with model parameters
 
 class Config():
+
+    @staticmethod
+    def fromdict(config_dict):
+        config = Config()
+        for name, val in config_dict.items():
+            setattr(config, name, val)
+        return config
     
     @staticmethod
     def load(path):
         os.makedirs(os.path.join(*("#" + path).split('/')[:-1])[1:], exist_ok=True)
         with open(path, 'rb') as handle:
             config_dict = pickle.load(handle)
-        config = Config()
-        for name, val in config_dict.items():
-            setattr(config, name, val)
-        return config
+        return Config.fromdict(config_dict)
 
     def store(self, path):
         os.makedirs(os.path.join(*("#" + path).split('/')[:-1])[1:], exist_ok=True)
         with open(path, 'wb') as handle:
             pickle.dump(self.__dict__, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    def set_attributes(
+            self, 
+            attributes_dict: Dict[str, Any], 
+            require_presence : bool = True,
+            keys_upper: bool = True
+        ) -> int:
+        _n_set = 0
+        for attr, val in attributes_dict.items():
+            if keys_upper:
+                attr = attr.upper()
+            set_this_attribute = True
+            if require_presence:
+                if not attr in self.__dict__.keys():
+                    set_this_attribute = False
+            if set_this_attribute:
+                if isinstance(val, list):
+                    val = tuple(val)
+                setattr(self, attr, val)
+                _n_set += 1
+        return _n_set
 
 
 def get_changing_values_range(size, val_init, val_fin, coldstart=0, coldfin=0, progression='lin'):
@@ -371,4 +397,11 @@ class ParametersSpecificator:
         if not keys in self.specification.keys():
             return self.default
         return self.specification[keys]
-    
+
+
+class DataParallelAttrAccess(torch.nn.DataParallel):
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)

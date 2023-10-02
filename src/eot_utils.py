@@ -6,8 +6,9 @@ from torchvision import utils as TVutils
 import wandb
 import gc
 import torch
+from typing import Callable
 
-from src.utils import computePotGrad
+from src.utils import computePotGrad, clean_resources
 from dgm_utils.scheduler import TrainingSchedulerWandB_Mixin
 from dgm_utils.scheduler import TrainingSchedulerFID_IS_Mixin
 
@@ -15,7 +16,8 @@ def conditional_sample_from_EgEOT(
     model, 
     config, 
     X, 
-    y_per_x, 
+    y_per_x,
+    Y_init=None,
     train_mode=False, 
     batch_size=None, 
     to_cpu=True, 
@@ -37,7 +39,7 @@ def conditional_sample_from_EgEOT(
             hasattr(config, 'TEST_ENERGY_SAMPLING_STEP') else config.ENERGY_SAMPLING_STEP
         decay = config.TEST_LANGEVIN_DECAY if \
             hasattr(config, 'TEST_LANGEVIN_DECAY') else config.LANGEVIN_DECAY
-    Y_init = model.sample_buffer.noise_gen.sample((X_rep.size(0),))
+    Y_init = model.sample_buffer.noise_gen.sample((X_rep.size(0),)) if Y_init is None else Y_init
 
     if batch_size is None:
         batch_size = X_rep.size(0)
@@ -75,6 +77,8 @@ class TrainingSchedulerWandB_EgEOT_Mixin(TrainingSchedulerWandB_Mixin):
         init_X_sampler = None,
         train_mode_sampling = True,
         test_mode_sampling = False,
+        is_image_space: bool = True,
+        target_data_transform: Callable = lambda x: x.clip(0., 1.),
         **kwargs
     ):
         self.model, self.config, self.use_wandb = self.extract_kwargs(
@@ -89,6 +93,8 @@ class TrainingSchedulerWandB_EgEOT_Mixin(TrainingSchedulerWandB_Mixin):
             'train': train_mode_sampling,
             'test': test_mode_sampling
         }
+        self.target_data_transform = target_data_transform
+        self.is_image_space = is_image_space
         super().__init__(*args, **kwargs)
 
     def on_batch_train_end(self, epoch=None, batch=None, losses=None, data=None):
@@ -98,62 +104,49 @@ class TrainingSchedulerWandB_EgEOT_Mixin(TrainingSchedulerWandB_Mixin):
             if self._steps_counter % self.plot_images_interval == 0:
                 # samples from the replay buffer:
                 if self.draw_replay_buffer_samples:
-                    X, Y = self.model.sample_buffer.get(self.draw_x_samples)
-                    SB_torch_grid = TVutils.make_grid(torch.cat([X, Y]), nrow=X.size(0), pad_value=1.)
+                    X, Y, _ = self.model.sample_buffer.get(self.draw_x_samples)
+                    Y = self.target_data_transform(Y)
+                    SB_torch_grid = TVutils.make_grid(torch.cat([X.cpu(), Y.cpu()]), nrow=X.size(0), pad_value=1.)
                     SB_images = wandb.Image(SB_torch_grid, caption='top: X, bottom: Y')
-                    wandb.log({"Replay Buffer samples": [SB_images,]}, step=self._steps_counter)
+                    wandb.log({"Replay Buffer samples": [SB_images,]}, step=self._steps_counter + 1)
+                
+                do_fixed, do_random = (
+                    self.init_X_fixed_samples is not None,
+                    self.init_X_sampler is not None
+                )
+                for do_stuff, stuff_name in zip([do_fixed, do_random], ['fixed', 'random']):
+                    if not do_stuff:
+                        continue
+                    if stuff_name == 'fixed':
+                        X = self.init_X_fixed_samples
+                    else:
+                        X = self.init_X_sampler.sample(self.draw_x_samples)
 
-                # samples from the model given init_X_fixed_samples
-                if self.init_X_fixed_samples is not None:
                     for mode, do_sampling in self.sampling_modes.items():
                         if not do_sampling:
                             continue
 
-                        X = self.init_X_fixed_samples
                         Y = conditional_sample_from_EgEOT(
                             self.model, 
                             self.config,
                             X, self.draw_y_samples_per_x, 
                             train_mode=True if mode == 'train' else False, 
                             to_cpu=False,
-                            batch_size=self.config.BATCH_SIZE
+                            batch_size=self.config.BATCH_SIZE,
+                            images_flag=self.is_image_space
                         )
+                        Y = self.target_data_transform(Y)
                         SB_torch_grid = TVutils.make_grid(
                             torch.cat([
-                                back_pix_val_transform(X), 
-                                Y]), nrow=X.size(0), pad_value=1.)
+                                back_pix_val_transform(X).cpu(), 
+                                Y.cpu()]), nrow=X.size(0), pad_value=1.)
                         SB_images = wandb.Image(SB_torch_grid, caption='top row: X, bottom rows: Ys|X')
                         wandb.log({
-                            "Random init Ys samples, fixed Xs, {} mode".format(mode): [SB_images,]
-                        }, step=self._steps_counter)
+                            "Random init Ys samples, {} Xs, {} mode".format(stuff_name, mode): [SB_images,]
+                        }, step=self._steps_counter + 1)
 
-                # samples from the model given random Xs
-                if self.init_X_sampler is not None:
-                    X = self.init_X_sampler.sample(self.draw_x_samples)
-                    for mode, do_sampling in self.sampling_modes.items():
-                        if not do_sampling:
-                            continue
-
-                        # X = self.init_X_sampler.sample(self.draw_x_samples)
-                        Y = conditional_sample_from_EgEOT(
-                            self.model, 
-                            self.config,
-                            X, self.draw_y_samples_per_x, 
-                            train_mode=True if mode == 'train' else False,
-                            to_cpu=False,
-                            batch_size=self.config.BATCH_SIZE
-                        )
-                        SB_torch_grid = TVutils.make_grid(torch.cat(
-                            [
-                                back_pix_val_transform(X), 
-                                Y
-                            ]), nrow=X.size(0), pad_value=1.)
-                        SB_images = wandb.Image(SB_torch_grid, caption='top row: X, bottom rows: Ys|X')
-                        wandb.log({
-                            "Random init Ys samples, random Xs, {} mode".format(mode): [SB_images,]
-                        }, step=self._steps_counter)
-                gc.collect(); torch.cuda.empty_cache()
-        gc.collect(); torch.cuda.empty_cache()
+                    clean_resources()
+                clean_resources()
         super().on_batch_train_end(epoch, batch, losses, data)
 
     def on_epoch_eval_end(self, epoch=None, losses=None):
