@@ -88,6 +88,8 @@ Note, that `eval_ot.py` evaluates the checkpoint with the largest number from `<
 
 ### AFHQ high-dimensional experiments
 
+<p align="center"><img src="teaser/afhq_egeot.png" width="800" /></p>
+
 Before launching the experiment one need to prepare the dataset and pretrained StyleGAN2-ADA. 
 
 #### Downloading AFHQ dataset
