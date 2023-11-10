@@ -2,7 +2,7 @@
 
 This repository contains code to reproduce the experiments from our work [https://arxiv.org/abs/2304.06094](https://arxiv.org/abs/2304.06094)
 
-<p align="center"><img src="teaser/teaser_egeot.png" width="800" /></p>
+<p align="center"><img src="teaser/afhq_egeot.png" width="800" /></p>
 
 ## Citation
 
@@ -87,8 +87,6 @@ The results could be found in `<PROJDIR>/mnist2to3/out_eval/mc2to3_h0.01_s1000_n
 Note, that `eval_ot.py` evaluates the checkpoint with the largest number from `<PROJDIR>/mnist2to3/out_data/mc2to3_h0.01_s1000_n0.1`.
 
 ### AFHQ high-dimensional experiments
-
-<p align="center"><img src="teaser/afhq_egeot.png" width="800" /></p>
 
 Before launching the experiment one need to prepare the dataset and pretrained StyleGAN2-ADA. 
 
