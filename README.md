@@ -1,6 +1,6 @@
 # Energy-guided-EntropicOT
 
-This repository contains code to reproduce the experiments from our work [https://arxiv.org/abs/2304.06094](https://arxiv.org/abs/2304.06094)
+This repository contains **code** for the experiments of ICLR'2024 paper [*Energy-guided Entropic Neural Optimal Transport*](https://openreview.net/forum?id=d6tUsZeVs7) by [Petr Mokrov](https://openreview.net/profile?id=~Petr_Mokrov1), [Alexander Korotin](https://scholar.google.ru/citations?user=1rIIvjAAAAAJ&hl=en), [Alexander Kolesov](https://openreview.net/profile?id=~Alexander_Kolesov1), [Nikita Gushchin](https://github.com/ngushchin), [Evgeny Burnaev](https://scholar.google.ru/citations?user=pCRdcOwAAAAJ&hl=en). We propose to solve Entropic Optimal Transport problem in continuous space with help of Energy-Based Models. Our experiments showcase the performance of our method in different illustrative and image-domain scenarious.
 
 <p align="center"><img src="teaser/afhq_egeot.png" width="800" /></p>
 
@@ -9,13 +9,13 @@ This repository contains code to reproduce the experiments from our work [https:
 If you find this repository or the ideas presented in our paper useful, please consider citing our paper.
 
 ```
-@misc{mokrov2023energyguided,
-      title={Energy-guided Entropic Neural Optimal Transport}, 
+@inproceedings{
+      mokrov2024energyguided,
+      title={Energy-guided Entropic Neural Optimal Transport},
       author={Petr Mokrov and Alexander Korotin and Alexander Kolesov and Nikita Gushchin and Evgeny Burnaev},
-      year={2023},
-      eprint={2304.06094},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG}
+      booktitle={The Twelfth International Conference on Learning Representations},
+      year={2024},
+      url={https://openreview.net/forum?id=d6tUsZeVs7}
 }
 ```
 
